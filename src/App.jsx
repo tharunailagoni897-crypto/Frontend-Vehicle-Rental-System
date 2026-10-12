@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8080/api' : '')
+const API_CONFIG_ERROR = 'The API is not configured. Set VITE_API_BASE_URL to your deployed backend URL ending in /api, then rebuild and redeploy the frontend.'
 const emptyRegistration = { firstName: '', lastName: '', email: '', password: '', phone: '', role: 'CUSTOMER' }
 const emptyCar = {
   brand: '',
@@ -56,10 +57,16 @@ function App() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const api = useMemo(() => axios.create({
-    baseURL: API_BASE,
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
-  }), [token])
+  const api = useMemo(() => {
+    const client = axios.create({
+      baseURL: API_BASE || undefined,
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    })
+    if (!API_BASE) {
+      client.interceptors.request.use(() => Promise.reject(new Error(API_CONFIG_ERROR)))
+    }
+    return client
+  }, [token])
 
   const refreshWorkspace = useCallback(async (client = api, user = auth) => {
     const carRequest = user?.role === 'ADMIN'
@@ -80,6 +87,10 @@ function App() {
   useEffect(() => {
     let active = true
     const restoreSession = async () => {
+      if (!API_BASE) {
+        setError(API_CONFIG_ERROR)
+        return
+      }
       if (!token) {
         setAuth(null)
         localStorage.removeItem('auth')
@@ -111,7 +122,7 @@ function App() {
   }, [api, token])
 
   useEffect(() => {
-    if (!auth) return
+    if (!auth || !API_BASE) return
     let active = true
     refreshWorkspace().catch((requestError) => {
       if (active) setError(getErrorMessage(requestError))
